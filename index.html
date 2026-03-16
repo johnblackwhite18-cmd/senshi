@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1A1D23">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>SENSHI 戦士</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#1A1D23;--surface:#23272F;--card:#2A2F38;
+  --border:#3A4050;--borderL:#4A5060;
+  --text:#E8E4DE;--muted:#9A9488;--dim:#6B6560;
+  --accent:#E8B84B;--blue:#5B9BD5;--green:#6BBF6B;
+  --red:#D46B6B;--orange:#D4945B;--purple:#9B7ED4;--teal:#5BB5B5;--cream:#F0EAD6;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,sans-serif;
+  min-height:100vh;min-height:100dvh;overflow-x:hidden;padding-top:env(safe-area-inset-top)}
+button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+@keyframes fadeUp{0%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(-30px)}}
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+.mn{font-family:'JetBrains Mono',monospace}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px}
+.bar-wrap{width:100%;border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width 0.5s ease}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ============================================================
+// SENSHI 戦士 — Life Progression RPG
+// ============================================================
+
+const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const NOW=new Date();
+const TODAY_IDX=NOW.getDay();
+const DAY_NAME=DAYS[TODAY_IDX];
+const IS_WEEKDAY=TODAY_IDX>=1&&TODAY_IDX<=5;
+const IS_WEEKEND=!IS_WEEKDAY;
+const GYM_DAYS=["Monday","Wednesday","Thursday","Friday"];
+const IS_GYM_DAY=GYM_DAYS.includes(DAY_NAME);
+const TODAY_STR=NOW.toISOString().slice(0,10);
+
+const RANKS=[
+  {name:"Rookie",icon:"⬜",div:["IV","III","II","I"],color:"#8B8B8B",rp:[0,499],cost:0},
+  {name:"Bronze",icon:"🥉",div:["IV","III","II","I"],color:"#CD7F32",rp:[500,1499],cost:10},
+  {name:"Silver",icon:"🥈",div:["IV","III","II","I"],color:"#C0C0C0",rp:[1500,2999],cost:25},
+  {name:"Gold",icon:"🥇",div:["IV","III","II","I"],color:"#E8B84B",rp:[3000,5499],cost:40},
+  {name:"Platinum",icon:"💠",div:["IV","III","II","I"],color:"#5BB5B5",rp:[5500,8499],cost:55},
+  {name:"Diamond",icon:"💎",div:["IV","III","II","I"],color:"#5B9BD5",rp:[8500,11999],cost:70},
+  {name:"Masters",icon:"🔮",div:["IV","III","II","I"],color:"#9B7ED4",rp:[12000,15999],cost:85},
+  {name:"Predator",icon:"👑",div:[""],color:"#D46B6B",rp:[16000,99999],cost:100},
+];
+
+const SC={
+  discipline:{color:"#D46B6B",icon:"🔥"},focus:{color:"#5B9BD5",icon:"🎯"},health:{color:"#6BBF6B",icon:"💪"},
+  wealth:{color:"#E8B84B",icon:"💰"},network:{color:"#D4945B",icon:"🤝"},knowledge:{color:"#9B7ED4",icon:"📖"},
+};
+
+const ALL_MISSIONS=[
+  {id:"early_rise",name:"Up Before 8am",cat:"discipline",emoji:"⏰",when:"morning",schedule:"weekdays",timeHint:"Log before 8:00am",isCore:false,coreType:null,
+    difficulty:[{label:"Standard",desc:"Up before 8:00am",xp:30},{label:"Hard",desc:"Up before 7:00am",xp:60},{label:"Elite",desc:"Up before 6:00am",xp:100}]},
+  {id:"scripture",name:"Daily Scripture",cat:"knowledge",emoji:"✝️",when:"morning",schedule:"weekdays",timeHint:"Read a scripture (5-10 min)",isCore:false,coreType:"spiritual",
+    difficulty:[{label:"Standard",desc:"Read daily text or chapter",xp:35},{label:"Hard",desc:"Read + reflect on application",xp:60},{label:"Elite",desc:"Read + notes + share with Liv",xp:90}]},
+  {id:"planning",name:"Daily Planning",cat:"discipline",emoji:"📋",when:"morning",schedule:"weekdays",timeHint:"After scripture reading",isCore:false,coreType:null,
+    difficulty:[{label:"Standard",desc:"Calendar + 3 priorities",xp:35},{label:"Hard",desc:"Full plan + inbox zero + CRM",xp:65},{label:"Elite",desc:"Plan + inbox + CRM + pipeline",xp:100}]},
+  {id:"rec_candidates",name:"Candidate Pipeline",cat:"network",emoji:"👤",when:"mid-morning",schedule:"weekdays",timeHint:"Solicitors + job seekers + registrations",isCore:true,coreType:"outreach",
+    difficulty:[{label:"Standard",desc:"12 activities (6 sol, 4 seek, 2 reg)",xp:70},{label:"Hard",desc:"18 activities (8+8+2)",xp:120},{label:"Elite",desc:"22 activities (10+10+2)",xp:175}]},
+  {id:"rec_bd",name:"Business Development",cat:"wealth",emoji:"🏢",when:"mid-morning",schedule:"weekdays",timeHint:"Law firm pitches + warm + CX leads",isCore:true,coreType:"outreach",
+    difficulty:[{label:"Standard",desc:"15 activities (5+5+5)",xp:75},{label:"Hard",desc:"24 activities (8+8+8)",xp:130},{label:"Elite",desc:"30 activities (10+10+10)",xp:185}]},
+  {id:"rec_activity",name:"Daily Activity",cat:"network",emoji:"📱",when:"afternoon",schedule:"weekdays",timeHint:"LinkedIn connections + calls",isCore:true,coreType:"outreach",
+    difficulty:[{label:"Standard",desc:"15 activities (10 LI, 5 calls)",xp:60},{label:"Hard",desc:"25 activities (15+10)",xp:110},{label:"Elite",desc:"30 activities (20+10)",xp:160}]},
+  {id:"content",name:"Content Creation",cat:"knowledge",emoji:"🎬",when:"flexible",schedule:"all_week",timeHint:"1 post (LinkedIn or TikTok)",isCore:false,coreType:null,
+    difficulty:[{label:"Standard",desc:"1 post on any platform",xp:80},{label:"Hard",desc:"1 post + engage 10 comments",xp:130},{label:"Elite",desc:"2 posts cross-platform",xp:190}]},
+  {id:"editing",name:"Video Editing",cat:"focus",emoji:"🎞️",when:"flexible",schedule:"weekdays",timeHint:"Edit or prep content",isCore:false,coreType:null,
+    difficulty:[{label:"Standard",desc:"Edit 1 video (rough cut)",xp:70},{label:"Hard",desc:"Edit + thumbnail + caption",xp:120},{label:"Elite",desc:"Full production + schedule",xp:175}]},
+  {id:"learning",name:"Upskilling",cat:"knowledge",emoji:"🧠",when:"flexible",schedule:"weekdays",timeHint:"Course, book, or skill work",isCore:false,coreType:null,
+    difficulty:[{label:"Standard",desc:"15 min reading or module",xp:40},{label:"Hard",desc:"30 min learning + notes",xp:75},{label:"Elite",desc:"60 min deep study + apply",xp:120}]},
+  {id:"steps",name:"10k Steps",cat:"health",emoji:"🚶",when:"throughout",schedule:"weekdays",timeHint:"10,000 steps",isCore:true,coreType:"health",
+    difficulty:[{label:"Standard",desc:"Hit 10,000 steps",xp:50},{label:"Hard",desc:"Hit 12,500 steps",xp:80},{label:"Elite",desc:"Hit 15,000+ steps",xp:120}]},
+  {id:"gym",name:"Gym Session",cat:"health",emoji:"🏋️",when:"afternoon",schedule:"gym",timeHint:"Mon/Wed/Thu/Fri afternoon",isCore:true,coreType:"health",
+    difficulty:[{label:"Standard",desc:"30 min session",xp:75},{label:"Hard",desc:"45-60 min + compound lifts",xp:130},{label:"Elite",desc:"60 min + PR attempt",xp:200}]},
+  {id:"sun_prep",name:"Sunday Meeting Prep",cat:"knowledge",emoji:"📜",when:"flexible",schedule:"saturday",timeHint:"Prepare for Sunday meeting",isCore:true,coreType:"spiritual",
+    difficulty:[{label:"Standard",desc:"Read + highlight scriptures",xp:55},{label:"Hard",desc:"Full prep with comments",xp:95},{label:"Elite",desc:"Prep + rehearse + research",xp:140}]},
+  {id:"tue_prep",name:"Tuesday Meeting Prep",cat:"knowledge",emoji:"📜",when:"flexible",schedule:"sun_or_mon",timeHint:"Prepare before Tuesday",isCore:true,coreType:"spiritual",
+    difficulty:[{label:"Standard",desc:"Read + highlight scriptures",xp:55},{label:"Hard",desc:"Full prep with comments",xp:95},{label:"Elite",desc:"Prep + rehearse + research",xp:140}]},
+  {id:"family_worship",name:"Family Worship",cat:"knowledge",emoji:"👫",when:"evening",schedule:"weekly_wed",timeHint:"Weekly with Liv",isCore:false,coreType:"spiritual",
+    difficulty:[{label:"Standard",desc:"Study or discussion together",xp:65},{label:"Hard",desc:"Structured study + application",xp:110},{label:"Elite",desc:"Full session + plan goals",xp:150}]},
+  {id:"personal_study",name:"Personal Bible Study",cat:"knowledge",emoji:"📚",when:"flexible",schedule:"weekly_sat",timeHint:"Deeper study session",isCore:false,coreType:"spiritual",
+    difficulty:[{label:"Standard",desc:"30 min focused study",xp:60},{label:"Hard",desc:"45 min + cross-references",xp:100},{label:"Elite",desc:"60 min + written notes",xp:145}]},
+];
+
+function getTodaysMissions(){
+  return ALL_MISSIONS.filter(m=>{
+    if(m.schedule==="all_week")return true;
+    if(m.schedule==="weekdays")return IS_WEEKDAY;
+    if(m.schedule==="gym")return IS_GYM_DAY;
+    if(m.schedule==="saturday")return DAY_NAME==="Saturday";
+    if(m.schedule==="sun_or_mon")return DAY_NAME==="Sunday"||DAY_NAME==="Monday";
+    if(m.schedule==="weekly_wed")return DAY_NAME==="Wednesday";
+    if(m.schedule==="weekly_sat")return DAY_NAME==="Saturday";
+    return false;
+  });
+}
+
+function checkGate(comp,missions){
+  if(IS_WEEKEND)return true;
+  const oMs=missions.filter(m=>m.coreType==="outreach"),oD=oMs.filter(m=>comp[m.id]).length;
+  const hMs=missions.filter(m=>m.coreType==="health"),hD=hMs.filter(m=>comp[m.id]).length;
+  const sMs=missions.filter(m=>m.coreType==="spiritual"),sD=sMs.filter(m=>comp[m.id]).length;
+  return oD>=Math.min(1,oMs.length)&&hD>=Math.min(2,hMs.length)&&sD>=Math.min(1,sMs.length);
+}
+
+const EXPS=[
+  {id:"morning_ops",name:"Morning Ops",emoji:"🌅",desc:"Scripture + plan + candidates",missions:["scripture","planning","rec_candidates"],bonus:80,schedule:"weekdays"},
+  {id:"revenue_push",name:"Revenue Push",emoji:"💰",desc:"All 3 recruitment blocks",missions:["rec_candidates","rec_bd","rec_activity"],bonus:120,schedule:"weekdays"},
+  {id:"content_engine",name:"Content Engine",emoji:"🎬",desc:"Create + edit in one push",missions:["content","editing"],bonus:60,schedule:"weekdays"},
+  {id:"iron_day",name:"Iron Day",emoji:"⚡",desc:"Gym + 10k + all recruitment",missions:["gym","steps","rec_candidates","rec_bd","rec_activity"],bonus:140,schedule:"gym"},
+  {id:"full_send",name:"Full Send",emoji:"🔥",desc:"Every mission today",missions:null,bonus:200,schedule:"all"},
+];
+
+function getTodaysExps(){
+  const ids=getTodaysMissions().map(m=>m.id);
+  return EXPS.filter(e=>{
+    if(e.schedule==="weekdays"&&!IS_WEEKDAY)return false;
+    if(e.schedule==="gym"&&!IS_GYM_DAY)return false;
+    return true;
+  }).map(e=>({...e,missions:e.missions?e.missions.filter(mid=>ids.includes(mid)):[...ids]}))
+    .filter(e=>e.missions.length>=2);
+}
+
+const REWARDS=[
+  {id:"gaming30",name:"30 Min Gaming",cost:8,tier:"daily",emoji:"🎮",desc:"Half hour session",gated:true},
+  {id:"gaming60",name:"60 Min Gaming",cost:15,tier:"daily",emoji:"🎮",desc:"Full hour session",gated:true},
+  {id:"prime",name:"Rent a Film (Prime)",cost:12,tier:"daily",emoji:"🍿",desc:"Any rental on Prime",gated:false},
+  {id:"gaming_eve",name:"Full Gaming Evening",cost:40,tier:"weekly",emoji:"🕹️",desc:"Uninterrupted evening",gated:true},
+  {id:"cinema",name:"Cinema Trip",cost:60,tier:"weekly",emoji:"🎬",desc:"Cinema with Liv or solo",gated:false},
+  {id:"meal",name:"Nice Meal Out",cost:75,tier:"weekly",emoji:"🍽️",desc:"Restaurant for two",gated:false},
+  {id:"clothes",name:"New Clothes / Gear",cost:150,tier:"monthly",emoji:"👔",desc:"Up to £50 spend",gated:false},
+  {id:"weekend_away",name:"Weekend Away",cost:350,tier:"monthly",emoji:"🏨",desc:"1-night trip with Liv",gated:false},
+  {id:"watch",name:"Watch Fund (£50)",cost:500,tier:"legendary",emoji:"⌚",desc:"£50 towards next watch",gated:false},
+  {id:"holiday",name:"Dubrovnik Fund (£75)",cost:750,tier:"legendary",emoji:"✈️",desc:"£75 towards Croatia trip",gated:false},
+];
+
+const RTIERS=[
+  {tier:"daily",label:"DAILY WINS",color:"#6BBF6B",icon:"🎮"},
+  {tier:"weekly",label:"WEEKLY REWARDS",color:"#5B9BD5",icon:"🏆"},
+  {tier:"monthly",label:"MONTHLY PRIZES",color:"#9B7ED4",icon:"💎"},
+  {tier:"legendary",label:"LEGENDARY GOALS",color:"#E8B84B",icon:"👑"},
+];
+
+const TGROUPS=[
+  {key:"morning",label:"MORNING",icon:"🌅",hint:"Anchor your day"},
+  {key:"mid-morning",label:"RECRUITMENT",icon:"📞",hint:"Revenue generation"},
+  {key:"afternoon",label:"AFTERNOON",icon:"🏋️",hint:"Physical + activity"},
+  {key:"flexible",label:"FLEXIBLE",icon:"⚡",hint:"Fit in when it works"},
+  {key:"evening",label:"EVENING",icon:"🌙",hint:"Wind down"},
+  {key:"throughout",label:"ALL DAY",icon:"🚶",hint:"Accumulate"},
+];
+
+function getRank(rp){
+  for(let i=RANKS.length-1;i>=0;i--){
+    if(rp>=RANKS[i].rp[0]){
+      const r=RANKS[i],range=r.rp[1]-r.rp[0]+1,inT=rp-r.rp[0];
+      const ds=range/r.div.length,di=Math.min(Math.floor(inT/ds),r.div.length-1);
+      return{...r,division:r.div[di],progress:(inT%ds)/ds};
+    }
+  }
+  return{...RANKS[0],division:"IV",progress:0};
+}
+function sMult(s){return s>=30?3:s>=14?2:s>=7?1.5:s>=3?1.25:1;}
+
+// ============================================================
+// PERSISTENCE
+// ============================================================
+const STORE_KEY="senshi_data";
+function loadData(){
+  try{const d=JSON.parse(localStorage.getItem(STORE_KEY));if(d&&d.date===TODAY_STR)return d;}catch(e){}
+  // Load persistent fields from yesterday if available
+  try{
+    const d=JSON.parse(localStorage.getItem(STORE_KEY));
+    if(d)return{date:TODAY_STR,comp:{},diffs:d.diffs||{},rp:d.rp||0,cr:d.cr||0,xp:0,
+      streaks:d.streaks||{},stats:d.stats||{discipline:20,focus:15,health:20,wealth:10,network:15,knowledge:25},
+      redeemed:[],activeExp:"morning_ops",crToday:0};
+  }catch(e){}
+  return null;
+}
+function saveData(data){
+  try{localStorage.setItem(STORE_KEY,JSON.stringify({...data,date:TODAY_STR}));}catch(e){}
+}
+
+// ============================================================
+// RENDER ENGINE (vanilla JS reactive UI)
+// ============================================================
+const todayMissions=getTodaysMissions();
+const todayExps=getTodaysExps();
+const mIds=todayMissions.map(m=>m.id);
+
+const defaultState={
+  screen:"hq",comp:{},diffs:{},rp:0,cr:0,xp:0,crToday:0,
+  streaks:{},stats:{discipline:20,focus:15,health:20,wealth:10,network:15,knowledge:25},
+  redeemed:[],activeExp:todayExps[0]?.id||"",flash:null,diffPicker:null,
+};
+const saved=loadData();
+let S=saved?{...defaultState,...saved,screen:"hq",flash:null,diffPicker:null}:{...defaultState};
+
+function setState(updates){
+  Object.assign(S,updates);
+  saveData(S);
+  render();
+}
+
+function completeMission(id){
+  if(S.comp[id])return;
+  const m=ALL_MISSIONS.find(x=>x.id===id);if(!m)return;
+  const diff=S.diffs[id]||0,streak=(S.streaks[id]||0)+1,mult=sMult(streak);
+  const earned=Math.round(m.difficulty[diff].xp*mult),crE=Math.round(earned*0.06);
+  const newComp={...S.comp,[id]:true};
+  const newStats={...S.stats,[m.cat]:Math.min(100,S.stats[m.cat]+Math.round(earned*0.025))};
+
+  setState({comp:newComp,streaks:{...S.streaks,[id]:streak},xp:S.xp+earned,rp:S.rp+Math.round(earned*0.25),
+    cr:S.cr+crE,crToday:S.crToday+crE,stats:newStats});
+
+  const exp=todayExps.find(e=>e.id===S.activeExp);
+  if(exp){
+    const done=mIds.filter(mid=>newComp[mid]);
+    if(exp.missions.every(mid=>done.includes(mid))){
+      const bc=Math.round(exp.bonus*0.08);
+      setState({xp:S.xp+exp.bonus,rp:S.rp+Math.round(exp.bonus*0.3),cr:S.cr+bc,crToday:S.crToday+bc});
+      showFlash(`${exp.emoji} ${exp.name} Complete! +${exp.bonus}XP`,"#E8B84B");
+      return;
+    }
+  }
+  showFlash(`+${earned}XP +${crE}CR 🔥${streak}d`,SC[m.cat].color);
+}
+
+function redeemReward(id){
+  const rw=REWARDS.find(x=>x.id===id);if(!rw)return;
+  const gateOpen=checkGate(S.comp,todayMissions);
+  if(rw.gated&&!gateOpen){showFlash("🔒 Complete core tasks first!","#D46B6B");return;}
+  if(S.cr>=rw.cost){
+    setState({cr:S.cr-rw.cost,redeemed:[...S.redeemed,{id}]});
+    showFlash(`${rw.emoji} ${rw.name} Earned!`,"#6BBF6B");
+  }
+}
+
+let flashTimer=null;
+function showFlash(text,color){
+  S.flash={text,color};render();
+  clearTimeout(flashTimer);
+  flashTimer=setTimeout(()=>{S.flash=null;render();},1500);
+}
+
+function h(tag,attrs,...children){
+  const el=document.createElement(tag);
+  if(attrs)Object.entries(attrs).forEach(([k,v])=>{
+    if(k==="style"&&typeof v==="object")Object.assign(el.style,v);
+    else if(k.startsWith("on"))el.addEventListener(k.slice(2).toLowerCase(),v);
+    else if(k==="className")el.className=v;
+    else el.setAttribute(k,v);
+  });
+  children.flat(Infinity).forEach(c=>{
+    if(c==null||c===false)return;
+    el.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(String(c)):c);
+  });
+  return el;
+}
+
+function barEl(value,max,color,height){
+  const pct=max>0?Math.min(value/max*100,100):0;
+  const wrap=h("div",{style:{width:"100%",height:height+"px",background:"var(--bg)",borderRadius:height/2+"px",overflow:"hidden"}});
+  wrap.appendChild(h("div",{style:{width:pct+"%",height:"100%",background:color,borderRadius:height/2+"px",transition:"width 0.5s ease"}}));
+  return wrap;
+}
+
+function pillEl(label,done){
+  return h("span",{style:{fontSize:"9px",fontFamily:"'JetBrains Mono',monospace",padding:"2px 6px",borderRadius:"3px",
+    background:done?"#6BBF6B20":"var(--bg)",color:done?"#6BBF6B":"var(--dim)",
+    border:"1px solid "+(done?"#6BBF6B30":"var(--border)")}},label);
+}
+
+function cardEl(attrs,...children){
+  return h("div",{style:{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px",marginBottom:"10px",...(attrs?.style||{})},...attrs},...children);
+}
+
+// ============================================================
+// SCREEN RENDERERS
+// ============================================================
+function renderHQ(){
+  const rank=getRank(S.rp);
+  const completedIds=mIds.filter(id=>S.comp[id]);
+  const cc=completedIds.length;
+  const gateOpen=checkGate(S.comp,todayMissions);
+
+  const els=[];
+
+  // Briefing
+  const brief=cardEl({style:{background:"linear-gradient(135deg,var(--surface),var(--card))",border:`1px solid ${rank.color}30`}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
+      h("div",null,
+        h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px"}},"DAILY BRIEFING — "+DAY_NAME.toUpperCase()),
+        h("div",{style:{fontSize:"22px",fontWeight:700,marginTop:"4px",color:"var(--cream)"}},S.xp.toLocaleString()+" ",h("span",{style:{fontSize:"12px",color:"var(--muted)"}},"XP"))
+      ),
+      h("div",{style:{textAlign:"right"}},
+        h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)"}},"CREDITS"),
+        h("div",{className:"mn",style:{fontSize:"18px",fontWeight:700,color:"var(--green)"}},S.crToday.toString())
+      )
+    ),
+    h("div",{style:{marginTop:"10px"}},
+      barEl(cc,todayMissions.length,rank.color,8),
+      h("div",{style:{display:"flex",justifyContent:"space-between",marginTop:"4px"}},
+        h("span",{className:"mn",style:{fontSize:"10px",color:"var(--muted)"}},cc+"/"+todayMissions.length+" missions"),
+        h("span",{className:"mn",style:{fontSize:"10px",color:"var(--muted)"}},"Entry: "+rank.cost+" RP")
+      )
+    ),
+    h("div",{style:{marginTop:"8px",padding:"5px 8px",background:"var(--bg)",borderRadius:"6px"}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"10px",fontFamily:"'JetBrains Mono',monospace",color:"var(--muted)",marginBottom:"3px"}},
+        h("span",null,rank.icon+" "+rank.name+" "+rank.division),
+        h("span",null,Math.round(rank.progress*100)+"%")
+      ),
+      barEl(rank.progress*100,100,rank.color,4)
+    )
+  );
+  els.push(brief);
+
+  // Gate
+  if(IS_WEEKEND){
+    els.push(cardEl({style:{background:"#6BBF6B12",border:"1px solid #6BBF6B40",padding:"10px"}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:"6px"}},
+        h("span",{style:{fontSize:"14px"}},"🌴"),
+        h("span",{className:"mn",style:{fontSize:"10px",fontWeight:700,color:"var(--green)"}},"WEEKEND — GAMING FREE, CREDITS ACTIVE")
+      )
+    ));
+  }else{
+    const oMs=todayMissions.filter(m=>m.coreType==="outreach"),oD=oMs.filter(m=>S.comp[m.id]).length,oN=Math.min(1,oMs.length);
+    const hMs=todayMissions.filter(m=>m.coreType==="health"),hD=hMs.filter(m=>S.comp[m.id]).length,hN=Math.min(2,hMs.length);
+    const sMs=todayMissions.filter(m=>m.coreType==="spiritual"),sD=sMs.filter(m=>S.comp[m.id]).length,sN=Math.min(1,sMs.length);
+    els.push(cardEl({style:{background:gateOpen?"#6BBF6B12":"var(--surface)",border:"1px solid "+(gateOpen?"#6BBF6B40":"var(--border)"),padding:"10px"}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}},
+        h("span",{style:{fontSize:"14px"}},gateOpen?"🔓":"🔒"),
+        h("span",{className:"mn",style:{fontSize:"10px",fontWeight:700,color:gateOpen?"var(--green)":"var(--muted)"}},gateOpen?"GAMING UNLOCKED":"GAMING LOCKED — complete core tasks")
+      ),
+      h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap"}},
+        oMs.length>0?pillEl("📞 Outreach "+oD+"/"+oN,oD>=oN):null,
+        pillEl("💪 Health "+hD+"/"+hN,hD>=hN),
+        pillEl("📖 Spiritual "+sD+"/"+sN,sD>=sN)
+      )
+    ));
+  }
+
+  // Missions by time
+  TGROUPS.forEach(g=>{
+    const gm=todayMissions.filter(m=>m.when===g.key);
+    if(gm.length===0)return;
+    els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px",display:"flex",alignItems:"center",gap:"6px"}},
+      h("span",{style:{fontSize:"12px"}},g.icon)," ",g.label," ",h("span",{style:{color:"var(--dim)",fontSize:"9px"}},"— "+g.hint)
+    ));
+    gm.forEach(m=>{
+      const done=!!S.comp[m.id],diff=S.diffs[m.id]||0,streak=S.streaks[m.id]||0;
+      const mult=sMult(streak+(done?0:1)),earnXp=Math.round(m.difficulty[diff].xp*mult),earnCr=Math.round(earnXp*0.06);
+      const isCore=m.isCore||m.coreType;
+      const card=h("div",{style:{...cardStyle(),display:"flex",alignItems:"center",gap:"10px",cursor:done?"default":"pointer",
+        opacity:done?"0.4":"1",borderColor:done?"#6BBF6B30":isCore?"#E8B84B30":"var(--border)",transition:"all 0.2s"},
+        onClick:()=>{if(!done)completeMission(m.id);}},
+        h("span",{style:{fontSize:"22px"}},m.emoji),
+        h("div",{style:{flex:1,minWidth:0}},
+          h("div",{style:{display:"flex",alignItems:"center",gap:"4px"}},
+            h("span",{style:{fontWeight:600,fontSize:"13px",color:"var(--cream)"}},m.name),
+            isCore&&!done?h("span",{className:"mn",style:{fontSize:"7px",padding:"1px 4px",background:"#E8B84B20",color:"#E8B84B",borderRadius:"2px",fontWeight:700}},"CORE"):null
+          ),
+          h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)"}},m.difficulty[diff].desc),
+          h("div",{style:{display:"flex",gap:"6px",marginTop:"2px",flexWrap:"wrap"}},
+            h("span",{className:"mn",style:{fontSize:"9px",color:"#E8B84B"}},"🔥"+streak+"d"),
+            mult>1?h("span",{className:"mn",style:{fontSize:"9px",color:"#E8B84B",padding:"0 3px",background:"#E8B84B10",borderRadius:"2px"}},mult+"x"):null,
+            h("span",{className:"mn",style:{fontSize:"9px",color:"#5B9BD5"}},earnXp+"XP"),
+            h("span",{className:"mn",style:{fontSize:"9px",color:"#6BBF6B"}},"+"+earnCr+"CR")
+          )
+        ),
+        !done?h("button",{style:{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:"3px",padding:"1px 5px",
+          color:["var(--muted)","#D4945B","#D46B6B"][diff],fontSize:"8px",fontFamily:"'JetBrains Mono',monospace",fontWeight:700},
+          onClick:(e)=>{e.stopPropagation();setState({diffPicker:S.diffPicker===m.id?null:m.id});}},["STD","HRD","ELT"][diff]):null,
+        h("div",{style:{width:"32px",height:"32px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+          background:done?"#6BBF6B":"var(--bg)",border:"2px solid "+(done?"#6BBF6B":"var(--borderL)"),
+          fontSize:"13px",fontWeight:700,color:"#fff",flexShrink:0}},done?"✓":"▶")
+      );
+      els.push(card);
+    });
+  });
+
+  // Diff picker
+  if(S.diffPicker){
+    const m=ALL_MISSIONS.find(x=>x.id===S.diffPicker);
+    if(m){
+      const streak=S.streaks[m.id]||0,mult=sMult(streak+1);
+      const picker=cardEl({style:{border:"1px solid #E8B84B30",background:"var(--surface)"}},
+        h("div",{className:"mn",style:{fontSize:"9px",color:"var(--muted)",marginBottom:"6px"}},"DIFFICULTY: "+m.name.toUpperCase()),
+        ...m.difficulty.map((d,i)=>{
+          const sel=(S.diffs[S.diffPicker]||0)===i;
+          return h("button",{style:{display:"block",width:"100%",padding:"7px 8px",marginBottom:"3px",textAlign:"left",
+            background:sel?"#E8B84B10":"transparent",border:"1px solid "+(sel?"#E8B84B25":"var(--border)"),
+            borderRadius:"5px",color:"var(--text)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px"},
+            onClick:()=>setState({diffs:{...S.diffs,[S.diffPicker]:i},diffPicker:null})},
+            h("span",{style:{fontWeight:700,color:["var(--muted)","#D4945B","#D46B6B"][i]}},d.label),
+            h("span",{style:{color:"var(--muted)",marginLeft:"6px"}},d.desc),
+            h("span",{style:{float:"right",color:"#5B9BD5"}},Math.round(d.xp*mult)+"XP")
+          );
+        })
+      );
+      els.push(picker);
+    }
+  }
+
+  // Active expedition
+  const exp=todayExps.find(e=>e.id===S.activeExp)||todayExps[0];
+  if(exp){
+    const done=exp.missions.filter(mid=>S.comp[mid]).length;
+    els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px"}},"ACTIVE EXPEDITION"));
+    els.push(cardEl({style:{border:"1px solid #E8B84B20",background:"var(--surface)"}},
+      h("div",{style:{display:"flex",justifyContent:"space-between"}},
+        h("div",null,h("span",{style:{fontSize:"18px"}},exp.emoji),h("span",{style:{fontWeight:700,marginLeft:"6px",fontSize:"14px",color:"var(--cream)"}},exp.name)),
+        h("span",{className:"mn",style:{fontSize:"10px",color:"#E8B84B"}},"+"+exp.bonus+"XP")
+      ),
+      h("div",{style:{fontSize:"10px",color:"var(--muted)",marginTop:"3px"}},exp.desc),
+      h("div",{style:{marginTop:"6px"}},barEl(done,exp.missions.length,"#E8B84B",5)),
+      h("div",{style:{display:"flex",gap:"3px",marginTop:"4px",flexWrap:"wrap"}},
+        ...exp.missions.map(mid=>{
+          const m=ALL_MISSIONS.find(x=>x.id===mid);if(!m)return null;
+          return h("span",{className:"mn",style:{fontSize:"9px",padding:"1px 5px",borderRadius:"3px",
+            background:S.comp[mid]?"#6BBF6B15":"var(--bg)",color:S.comp[mid]?"#6BBF6B":"var(--dim)",
+            border:"1px solid "+(S.comp[mid]?"#6BBF6B25":"var(--border)")}},m.emoji+" "+m.name);
+        }).filter(Boolean)
+      )
+    ));
+  }
+
+  // Next rewards
+  els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px"}},"NEXT REWARDS"));
+  REWARDS.filter(r=>r.cost<=S.cr+60).slice(0,3).forEach(r=>{
+    const can=S.cr>=r.cost,locked=r.gated&&!gateOpen;
+    const rCard=h("div",{style:{...cardStyle(),display:"flex",alignItems:"center",gap:"8px",padding:"10px",opacity:locked?"0.5":"1"}},
+      h("span",{style:{fontSize:"18px"}},r.emoji),
+      h("div",{style:{flex:1,minWidth:0}},
+        h("div",{style:{fontSize:"11px",fontWeight:600,color:"var(--cream)",display:"flex",gap:"4px",alignItems:"center"}},
+          r.name,r.gated?h("span",{className:"mn",style:{fontSize:"7px",color:locked?"#D46B6B":"#6BBF6B"}},locked?"🔒":"🔓"):null
+        ),
+        barEl(S.cr,r.cost,can&&!locked?"#6BBF6B":"#5B9BD5",3)
+      ),
+      can&&!locked?h("button",{style:{padding:"3px 10px",background:"#6BBF6B",border:"none",borderRadius:"4px",color:"#fff",
+        fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",fontWeight:700},onClick:()=>redeemReward(r.id)},"GET"):null
+    );
+    els.push(rCard);
+  });
+  els.push(h("button",{style:{width:"100%",padding:"7px",background:"transparent",border:"1px solid var(--border)",
+    borderRadius:"5px",color:"#6BBF6B",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",fontWeight:600,marginTop:"4px"},
+    onClick:()=>setState({screen:"rewards"})},"REWARD SHOP →"));
+
+  return els;
+}
+
+function renderRewards(){
+  const gateOpen=checkGate(S.comp,todayMissions);
+  const els=[];
+  els.push(h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}},
+    h("span",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px"}},"REWARD SHOP"),
+    h("span",{className:"mn",style:{fontSize:"14px",color:"var(--green)",fontWeight:700}},"★ "+S.cr)
+  ));
+
+  RTIERS.forEach(t=>{
+    els.push(h("div",{className:"mn",style:{fontSize:"10px",color:t.color,letterSpacing:"1px",marginTop:"16px",marginBottom:"6px"}},t.icon+" "+t.label));
+    REWARDS.filter(r=>r.tier===t.tier).forEach(r=>{
+      const can=S.cr>=r.cost,locked=r.gated&&!gateOpen,dl=can?0:Math.ceil((r.cost-S.cr)/25);
+      els.push(h("div",{style:{...cardStyle(),display:"flex",alignItems:"center",gap:"10px",opacity:locked?"0.5":"1"}},
+        h("span",{style:{fontSize:"26px"}},r.emoji),
+        h("div",{style:{flex:1,minWidth:0}},
+          h("div",{style:{fontWeight:600,fontSize:"13px",color:"var(--cream)",display:"flex",alignItems:"center",gap:"4px"}},
+            r.name,r.gated?h("span",{className:"mn",style:{fontSize:"8px",padding:"1px 4px",
+              background:(locked?"#D46B6B":"#6BBF6B")+"20",color:locked?"#D46B6B":"#6BBF6B",borderRadius:"2px"}},locked?"🔒 GATED":"🔓"):null
+          ),
+          h("div",{style:{fontSize:"10px",color:"var(--muted)"}},r.desc),
+          h("div",{style:{marginTop:"4px"}},barEl(S.cr,r.cost,can&&!locked?"#6BBF6B":t.color,4)),
+          h("div",{className:"mn",style:{fontSize:"9px",color:"var(--dim)",marginTop:"2px"}},
+            locked?"Complete core tasks to unlock":can?"Ready to redeem!":(r.cost-S.cr)+" CR (~"+dl+"d)")
+        ),
+        h("div",{style:{textAlign:"center",flexShrink:0}},
+          h("div",{className:"mn",style:{fontSize:"12px",fontWeight:700,color:can&&!locked?"#6BBF6B":"var(--dim)"}},"★"+r.cost),
+          can&&!locked?h("button",{style:{marginTop:"3px",padding:"3px 10px",background:"#6BBF6B",border:"none",borderRadius:"4px",
+            color:"#fff",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",fontWeight:700},onClick:()=>redeemReward(r.id)},"REDEEM"):null
+        )
+      ));
+    });
+  });
+  return els;
+}
+
+function renderOps(){
+  const els=[];
+  els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"10px",marginTop:"18px"}},"EXPEDITION BAY — "+DAY_NAME.toUpperCase()));
+  todayExps.forEach(e=>{
+    const done=e.missions.filter(mid=>S.comp[mid]).length,isA=S.activeExp===e.id,allD=done===e.missions.length;
+    els.push(cardEl({style:{border:"1px solid "+(isA?"#E8B84B40":allD?"#6BBF6B30":"var(--border)"),background:isA?"var(--surface)":"var(--card)"}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+        h("div",null,
+          h("span",{style:{fontSize:"20px"}},e.emoji),
+          h("span",{style:{fontWeight:700,marginLeft:"6px",fontSize:"14px",color:"var(--cream)"}},e.name),
+          isA?h("span",{className:"mn",style:{fontSize:"8px",color:"#E8B84B",marginLeft:"6px"}},"ACTIVE"):null,
+          allD?h("span",{className:"mn",style:{fontSize:"8px",color:"#6BBF6B",marginLeft:"6px"}},"✓"):null
+        ),
+        h("span",{className:"mn",style:{fontSize:"10px",color:"#E8B84B"}},"+"+e.bonus+"XP")
+      ),
+      h("div",{style:{fontSize:"10px",color:"var(--muted)",marginTop:"3px"}},e.desc),
+      h("div",{style:{marginTop:"6px"}},barEl(done,e.missions.length,allD?"#6BBF6B":"#E8B84B",5)),
+      h("div",{style:{display:"flex",gap:"3px",marginTop:"4px",flexWrap:"wrap"}},
+        ...e.missions.map(mid=>{
+          const m=ALL_MISSIONS.find(x=>x.id===mid);if(!m)return null;
+          return h("span",{className:"mn",style:{fontSize:"9px",padding:"1px 5px",borderRadius:"3px",
+            background:S.comp[mid]?"#6BBF6B15":"var(--bg)",color:S.comp[mid]?"#6BBF6B":"var(--dim)",
+            border:"1px solid "+(S.comp[mid]?"#6BBF6B25":"var(--border)")}},m.emoji+" "+m.name);
+        }).filter(Boolean)
+      ),
+      !isA?h("button",{style:{marginTop:"6px",width:"100%",padding:"7px",background:"var(--bg)",border:"1px solid var(--borderL)",
+        borderRadius:"5px",color:"#E8B84B",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",fontWeight:600},
+        onClick:()=>setState({activeExp:e.id})},"DEPLOY"):null
+    ));
+  });
+  return els;
+}
+
+function renderStats(){
+  const rank=getRank(S.rp);
+  const els=[];
+  // Profile
+  els.push(cardEl({style:{textAlign:"center",padding:"18px",background:"var(--surface)"}},
+    h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px"}},"戦士 SENSHI PROFILE"),
+    h("div",{style:{fontSize:"20px",fontWeight:700,marginTop:"3px",color:"var(--cream)"}},"John"),
+    h("div",{style:{marginTop:"4px",display:"inline-flex",alignItems:"center",gap:"6px",padding:"3px 12px",borderRadius:"4px",
+      background:rank.color+"12",border:"1px solid "+rank.color+"30"}},
+      h("span",{style:{fontSize:"16px"}},rank.icon),
+      h("span",{className:"mn",style:{fontSize:"12px",fontWeight:700,color:rank.color}},rank.name+" "+rank.division),
+      h("span",{className:"mn",style:{fontSize:"10px",color:"var(--muted)"}},S.rp+" RP")
+    )
+  ));
+
+  // Stats
+  els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px"}},"STATS"));
+  Object.entries(S.stats).forEach(([k,v])=>{
+    els.push(h("div",{style:{...cardStyle(),padding:"10px",display:"flex",alignItems:"center",gap:"8px"}},
+      h("span",{style:{fontSize:"16px"}},SC[k].icon),
+      h("div",{style:{flex:1}},
+        h("div",{style:{display:"flex",justifyContent:"space-between"}},
+          h("span",{style:{fontWeight:600,fontSize:"11px",color:"var(--cream)"}},k.charAt(0).toUpperCase()+k.slice(1)),
+          h("span",{className:"mn",style:{fontSize:"11px",color:SC[k].color,fontWeight:700}},"Lv."+v)
+        ),
+        barEl(v,100,SC[k].color,4)
+      )
+    ));
+  });
+
+  // Streaks
+  els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px"}},"STREAKS"));
+  todayMissions.forEach(m=>{
+    const s=S.streaks[m.id]||0,mult=sMult(s);
+    els.push(h("div",{style:{display:"flex",alignItems:"center",gap:"6px",padding:"5px 8px",marginBottom:"3px",
+      background:"var(--card)",border:"1px solid var(--border)",borderRadius:"5px"}},
+      h("span",{style:{fontSize:"14px"}},m.emoji),
+      h("span",{style:{fontSize:"11px",flex:1,color:"var(--cream)"}},m.name),
+      h("span",{className:"mn",style:{fontSize:"10px",color:"#E8B84B",fontWeight:600}},"🔥"+s+"d"),
+      mult>1?h("span",{className:"mn",style:{fontSize:"8px",padding:"1px 4px",background:"#E8B84B12",color:"#E8B84B",borderRadius:"2px",fontWeight:700}},mult+"x"):null
+    ));
+  });
+
+  // Rank ladder
+  els.push(h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",letterSpacing:"1px",marginBottom:"6px",marginTop:"18px"}},"RANK LADDER"));
+  RANKS.forEach(r=>{
+    const cur=rank.name===r.name;
+    els.push(h("div",{style:{display:"flex",alignItems:"center",gap:"6px",padding:"5px 8px",marginBottom:"2px",borderRadius:"5px",
+      background:cur?r.color+"08":"transparent",border:"1px solid "+(cur?r.color+"30":"transparent")}},
+      h("span",{style:{fontSize:"14px"}},r.icon),
+      h("span",{className:"mn",style:{fontSize:"11px",fontWeight:cur?700:400,color:cur?r.color:S.rp>=r.rp[0]?"var(--text)":"var(--dim)"}},r.name),
+      h("span",{className:"mn",style:{fontSize:"9px",color:"var(--dim)",marginLeft:"auto"}},r.rp[0].toLocaleString()+"+")
+    ));
+  });
+  return els;
+}
+
+function cardStyle(){return{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px",marginBottom:"10px"};}
+
+// ============================================================
+// MAIN RENDER
+// ============================================================
+const NAV_ITEMS=[
+  {key:"hq",label:"HQ",icon:"⬡"},
+  {key:"missions",label:"Missions",icon:"◎"},
+  {key:"rewards",label:"Rewards",icon:"★"},
+  {key:"ops",label:"Ops",icon:"△"},
+  {key:"stats",label:"Stats",icon:"⬢"},
+];
+
+function render(){
+  const rank=getRank(S.rp);
+  const app=document.getElementById("app");
+  app.innerHTML="";
+
+  // Flash
+  if(S.flash){
+    app.appendChild(h("div",{style:{position:"fixed",top:"68px",left:"50%",transform:"translateX(-50%)",zIndex:999,
+      background:S.flash.color,color:"#fff",padding:"8px 18px",borderRadius:"8px",
+      fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:"14px",
+      animation:"fadeUp 1.5s forwards",pointerEvents:"none",whiteSpace:"nowrap"}},S.flash.text));
+  }
+
+  // Header
+  app.appendChild(h("div",{style:{background:"var(--surface)",borderBottom:"1px solid var(--border)",padding:"12px 16px",
+    display:"flex",alignItems:"center",justifyContent:"space-between"}},
+    h("div",null,
+      h("div",{className:"mn",style:{fontWeight:700,fontSize:"18px",letterSpacing:"3px",color:"var(--accent)"}},"SENSHI"),
+      h("div",{className:"mn",style:{fontSize:"9px",color:"var(--dim)",marginTop:"-1px"}},"戦士"),
+      h("div",{className:"mn",style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px"}},
+        DAY_NAME.toUpperCase()+" | "+(IS_WEEKEND?"🌴 WEEKEND":IS_GYM_DAY?"🏋️ GYM DAY":"REST DAY"))
+    ),
+    h("div",{style:{textAlign:"right"}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:"5px",justifyContent:"flex-end"}},
+        h("span",{style:{fontSize:"16px"}},rank.icon),
+        h("span",{className:"mn",style:{fontSize:"11px",color:rank.color,fontWeight:700}},rank.name+" "+rank.division)
+      ),
+      h("div",{style:{display:"flex",gap:"8px",marginTop:"2px",justifyContent:"flex-end"}},
+        h("span",{className:"mn",style:{fontSize:"10px",color:rank.color}},S.rp+" RP"),
+        h("span",{className:"mn",style:{fontSize:"10px",color:"var(--green)"}},"★"+S.cr)
+      )
+    )
+  ));
+
+  // Nav
+  const nav=h("div",{style:{display:"flex",borderBottom:"1px solid var(--border)",background:"var(--surface)"}});
+  NAV_ITEMS.forEach(n=>{
+    const active=S.screen===n.key;
+    nav.appendChild(h("button",{style:{flex:1,padding:"8px 4px",background:active?"var(--card)":"transparent",
+      border:"none",borderBottom:active?"2px solid var(--accent)":"2px solid transparent",
+      color:active?"var(--accent)":"var(--muted)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",fontWeight:600,
+      display:"flex",flexDirection:"column",alignItems:"center",gap:"1px"},
+      onClick:()=>setState({screen:n.key,diffPicker:null})},
+      h("span",{style:{fontSize:"14px"}},n.icon),n.label
+    ));
+  });
+  app.appendChild(nav);
+
+  // Content
+  const content=h("div",{style:{padding:"14px",maxWidth:"480px",margin:"0 auto",paddingBottom:"32px"}});
+  let els=[];
+  if(S.screen==="hq")els=renderHQ();
+  else if(S.screen==="missions")els=renderHQ(); // reuse HQ for now (missions tab shows same)
+  else if(S.screen==="rewards")els=renderRewards();
+  else if(S.screen==="ops")els=renderOps();
+  else if(S.screen==="stats")els=renderStats();
+  els.filter(Boolean).forEach(el=>content.appendChild(el));
+  app.appendChild(content);
+}
+
+// Boot
+render();
+
+// Register service worker
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
+</script>
+</body>
+</html>
